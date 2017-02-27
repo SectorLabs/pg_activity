@@ -209,6 +209,12 @@ server activity monitoring.")
                 action = 'store_true',
                 help = "Enable debug mode for traceback tracking.",
                 default = 'false')
+            parser.add_option(
+                '--nosuper',
+                dest = 'nosuper',
+                action = 'store_true',
+                help = "Disables features that require super-user access."
+            )
             (options, _) = parser.parse_args()
         except OptionParsingError as err:
             print('pg_activity: error: %s' % err.msg)
@@ -222,13 +228,14 @@ server activity monitoring.")
         nb_try = 0
         while nb_try < 2:
             try:
+                rds_mode = True if options.rds or options.nosuper else False
                 PGAUI.data.pg_connect(
                     host = options.host,
                     port = options.port,
                     user = options.username,
                     password = password,
                     database = options.dbname,
-                    rds_mode = options.rds)
+                    rds_mode = rds_mode)
                 break
             except psycopg2.OperationalError as err:
                 if nb_try < 1 and (err.pgcode == errorcodes.INVALID_PASSWORD or
@@ -274,8 +281,15 @@ server activity monitoring.")
         disp_procs = None
         delta_disk_io = None
         # get DB informations
-        db_info = PGAUI.data.pg_get_db_info(None, using_rds = options.rds)
-        PGAUI.set_max_db_length(db_info['max_length'])
+        if not options.nosuper:
+            db_info = PGAUI.data.pg_get_db_info(None, using_rds = options.rds)
+            PGAUI.set_max_db_length(db_info['max_length'])
+        else:
+            db_info = {
+                'tps': -1,
+                'size_ev': -1,
+                'total_size': -1
+            }
         # indentation
         indent = PGAUI.get_indent(flag)
         # Init curses
@@ -301,8 +315,9 @@ server activity monitoring.")
                 delta_disk_io = PGAUI.data.get_global_io_counters()
             procs = new_procs
             # refresh the winodw
-            db_info = PGAUI.data.pg_get_db_info(db_info, using_rds = options.rds)
-            PGAUI.set_max_db_length(db_info['max_length'])
+            if not options.nosuper:
+                db_info = PGAUI.data.pg_get_db_info(db_info, using_rds = options.rds)
+                PGAUI.set_max_db_length(db_info['max_length'])
             # bufferize
             PGAUI.set_buffer({
                 'procs': disp_procs,
